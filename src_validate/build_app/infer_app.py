@@ -1258,7 +1258,21 @@ class InferApp:
             assert self.orig_im_shape == tuple(merged_discrete.shape)
             assert self.orig_im_shape == tuple(merged_prob.shape)
 
-        return merged_discrete.unsqueeze(dim=0), merged_prob.unsqueeze(dim=0)
+        #Now we channel-split the probability map by class.
+        prob_map_list = []
+        for label in self.configs_labels_dict.keys():
+            if label.title() == 'Background':
+                prob_map_list.append(1 - merged_prob)
+            else:
+                prob_map_list.append(merged_prob)
+        merged_prob = torch.stack(prob_map_list, dim=0)
+        merged_discrete = merged_discrete.unsqueeze(dim=0)
+        
+        assert merged_discrete.ndim == 4
+        assert merged_prob.ndim == 4
+        assert merged_prob.shape[0] == len(self.configs_labels_dict)
+
+        return merged_discrete, merged_prob #merged_prob.unsqueeze(dim=0)
 
 ########################################################
     def transforms(self, new_size):  
