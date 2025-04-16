@@ -15,11 +15,6 @@ import sys
 import os 
 sys.path.append(os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 from segment_anything import sam_model_registry as registry_sammed2d
-# from radioa.prompts.prompt import PromptStep
-# from radioa.model.inferer import Inferer
-# from radioa.utils.transforms import orig_to_SAR_dense, orig_to_canonical_sparse_coords
-# from radioa.datasets_preprocessing.conversion_utils import load_any_to_nib
-
 ########################################
 from monai.data import MetaTensor 
 import re
