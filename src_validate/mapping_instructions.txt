@@ -1,0 +1,27 @@
+We have provided a set of images to illustrate the intention behind our design choices in the code.
+
+We can observe that when we extract a 3D image initially, orthogonal rotation necessitates swapping of channel dimensions in the image array. Hence an RAS image 
+is indexed in the same order. However, the demo provides axial slices as it is 2D. If we take a 2D slice, i.e. planes that are parallel to the R-A plane, then this
+us the corresponding slices.
+
+We also notice that the positive directions in each corresponding axis is still consistent (i.e. R->L, A->P) 
+
+Now, in our image array, the axes corresponding to (x,y,z) in a 3D array would be RAS. However, the demo also provides a coordinate convention according to cv2, 
+which indicates that the coordinate axes of the 2D slice we have taken is mirrored. 
+I.e., x',y' := y,x.
+
+So we require a transpose of the image slice, in order to yield images in the same convention.
+
+Now, our prompts were provided in a manner where the coordinates are in the R, A, S order (x,y,z). Would this require modification for input to the model? Well, no, because 
+the ordering of the coordinates axes given in SAMMed2D demo is in the x',y' order for an image array in y', x' order. So, in order to get the coordinate of the prompts under
+this map, we don't do anything, after all a coordinate just indicates "how far" along a given axis we are moving (as we are working with nice symmetric matrices). 
+Note that this was only possible because we already mapped the image! 
+
+
+=====================================================================================================================================================
+
+An easier way to think about this is that the x' axis in the cv2 representation is the R-L axis, while the y' axis in the cv2 representation is the A-P axis. So the
+coordinates are not changing! 
+
+Its just that the image itself, because it was originally having channels swapping when it was loaded in 3D, meant that the y' axis was the R-L axis, while the 
+x' axis was the A-P axis.... because the convention in cv2 is y,x for an array, e.g. an image array which is 300 x 200 would have coordinate set of (0 - 199) x (0, 299)
