@@ -882,7 +882,7 @@ class InferApp:
 
                         #In this case, we return a tensor of -1000 for the output as this will eval to 0s at the floating point precision for the prob map under 
                         # sigmoid. Internally store a different mask variable, a Nonetype (i.e., it will treat that first interaction instance as an init..)
-                        logits_outputs, lowres_masks = -1000 * torch.ones([1,1] + self.input_dom_shapes[2].tolist()) , None
+                        logits_outputs, lowres_masks = -1000 * torch.ones([1,1] + self.input_dom_shapes[ax][::-1].tolist()) , None
                         if not torch.all(torch.sigmoid(logits_outputs) == 0):
                             raise Exception('Error with the strategy for generating p = 0 maps.')
                         self.internal_lowres_mask_storage[ax][slice_idx] = lowres_masks  
