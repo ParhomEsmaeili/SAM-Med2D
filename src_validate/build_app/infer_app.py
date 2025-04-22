@@ -468,7 +468,11 @@ class InferApp:
 
         #First we stash the set of prompts in our collected bank in the input image domain.
         infer_slices = self.binary_store_prompts(current_prompts=current_prompts, provided_ptypes=provided_ptypes, init_bool=init_bool)
-
+        if init_bool:
+            for ax in self.app_params['image_axes']:
+                if self.orig_im_shape[ax] != len(infer_slices[ax]):
+                    raise Exception(f'The quantity of altered slices in the initialisation for axis {ax} was {len(infer_slices[ax])}, but it needs to be {self.orig_im_shape[ax]}')
+        
         #Now we need to map this into the domain of the expected images, which are defined by the array definition of cv2, and then map that to the model domain.
         self.binary_map_prompt_to_model(infer_slices=infer_slices, init_bool=init_bool)
         return infer_slices
@@ -699,8 +703,6 @@ class InferApp:
         for ax in self.app_params['image_axes']:
             #For each axis, we store the set of prompts in the altered slices.
             if init_bool:
-                if self.orig_im_shape[ax] != len(infer_slices[ax]):
-                    raise Exception(f'The quantity of altered slices in the initialisation for axis {ax} was {len(infer_slices[ax])}, but it needs to be {self.orig_im_shape[ax]}')
                 self.model_prompts_storage_dict = copy.deepcopy(self.orig_prompts_storage_dict)
                 #We copy as this will copy over the structure, but this does not mean that our job is yet complete, for autoseg it will though.
             for slice_idx in infer_slices[ax]:
