@@ -888,7 +888,7 @@ class InferApp:
                         self.internal_lowres_mask_storage[ax][slice_idx] = lowres_masks  
                         #We keep these two separate by following the convention in the demo to use the lowres map for forward propagation.
                         prob_outputs = torch.sigmoid(logits_outputs).to(device=self.infer_device)
-                        discrete_outputs = (prob_outputs > 0).long()
+                        discrete_outputs = (prob_outputs > 0.5).long()
                 else:
                     #In this case we have prompts, we split our next operations between points & scribbles, and bboxes (as we treat scribbles as sets of points)
                     
