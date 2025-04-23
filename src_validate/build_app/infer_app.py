@@ -20,6 +20,8 @@ from monai.data import MetaTensor
 import re
 from itertools import product 
 # from segment_anything import SamPredictor
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import warnings 
 #Sanity checking:
