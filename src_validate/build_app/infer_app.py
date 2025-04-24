@@ -219,7 +219,9 @@ class InferApp:
         #Some assumptions we make are listed below when they have an actionable behaviour. Some however, are not: E.g., one assumption we make is that while we will
         #enforce that the bbox will remain static post initialisation of a slice and for which we remove any repeats since it would constitute the generation of extra
         #instances, we do not do this for the points/scribbles. There may be instances where a user is with insistence trying to repeatedly click on the same point!
-
+        #
+        # Implicitly we are using the original assumption of the model, which is that bboxes are strictly for constraining, and not for editing!
+    
 
         #Initialising any remaining variables required for performing inference.
 
@@ -1382,25 +1384,25 @@ if __name__ == '__main__':
             'metatensor': input_metatensor,
             'meta_dict':{'affine':input_metatensor.affine}
         },
-        # 'model':'IS_interactive_init',
-        'model': 'IS_autoseg',
+        'model':'IS_interactive_init',
+        # 'model': 'IS_autoseg',
         'config_labels_dict':{'background':0, 'tumor':1},
         'im':
-        {'Automatic Init': None,
-        # {'Interactive Init':{
-        #     'interaction_torch_format': {
-        #         'interactions': {
-        #             'points': None,#[torch.tensor([[40, 103, 43]]), torch.tensor([[62, 62, 39]]), torch.tensor([[61, 62, 39]])], #None
-        #             'scribbles': None,#[torch.tensor([[63,62,39], [64,62,39],[65,62,39]]), torch.tensor([[73,62,39], [74,62,39],[75,62,39]])], 
-        #             #This second scribble is a fugazi but intended just for sanity checking the mapping.
-        #             'bboxes': [torch.Tensor([[56,30,17, 92, 76, 51]]).to(dtype=torch.int64), torch.Tensor([[93,80,30, 105, 100, 51]]).to(dtype=torch.int64)]  #None 
-        #             },#This second box is a fugazi but intended just for sanity checking that the multi-box method works. 17-51 should be the real bounds.
-        #         'interactions_labels': {
-        #             'points_labels': None,#[torch.tensor([0]), torch.tensor([1]), torch.tensor([1])], #None,#[torch.tensor([0]), torch.tensor([1])], 
-        #             'scribbles_labels':None,#[torch.tensor([1]), torch.tensor([0])],  
-        #             'bboxes_labels': [torch.Tensor([1]).to(dtype=torch.int64), torch.Tensor([1]).to(dtype=torch.int64)] #None
-        #             },
-        #         }
+        # {'Automatic Init': None,
+        {'Interactive Init':{
+            'interaction_torch_format': {
+                'interactions': {
+                    'points': [torch.tensor([[40, 103, 43]]), torch.tensor([[62, 62, 39]]), torch.tensor([[61, 62, 39]])], #None
+                    'scribbles': None,#[torch.tensor([[63,62,39], [64,62,39],[65,62,39]]), torch.tensor([[73,62,39], [74,62,39],[75,62,39]])], 
+                    #This second scribble is a fugazi but intended just for sanity checking the mapping.
+                    'bboxes': None#[torch.Tensor([[56,30,17, 92, 76, 51]]).to(dtype=torch.int64), torch.Tensor([[93,80,30, 105, 100, 51]]).to(dtype=torch.int64)]  #None 
+                    },#This second box is a fugazi but intended just for sanity checking that the multi-box method works. 17-51 should be the real bounds.
+                'interactions_labels': {
+                    'points_labels': [torch.tensor([0]), torch.tensor([1]), torch.tensor([1])], #None,#[torch.tensor([0]), torch.tensor([1])], 
+                    'scribbles_labels':None,#[torch.tensor([1]), torch.tensor([0])],  
+                    'bboxes_labels': None#[torch.Tensor([1]).to(dtype=torch.int64), torch.Tensor([1]).to(dtype=torch.int64)] #None
+                    },
+                }
             # 'interaction_dict_format': {
             # 'points': {'background': [[40, 103, 43]],
             # 'tumor': [[61,62,39],[62, 62, 39]]
@@ -1408,7 +1410,7 @@ if __name__ == '__main__':
             # 'points': None,
             # 'scribbles': None, #{'background':[[73,62,39], [74,62,39],[75,62,39]]], 'tumor': [[[63,62,39], [64,62,39], [65,62,39]]] }
             # 'bboxes': None, #{'background': [], 'tumor': [[56,30,17, 92, 76, 51]]} #None
-            # },
+            },
             # 'prev_probs': {'metatensor': None, 'meta_dict': None}, 
             # 'prev_pred': {'metatensor': None, 'meta_dict': None}}
         },
@@ -1429,15 +1431,15 @@ if __name__ == '__main__':
         {'Interactive Edit Iter 1':{
             'interaction_torch_format': {
                 'interactions': {
-                    'points': None,# [torch.tensor([[62,62,39]])],#[torch.tensor([[41, 103, 69]]), torch.tensor([[62, 62, 57]]), torch.tensor([[61, 62, 57]])], #None
+                    'points': [torch.tensor([[62,62,39]])],#[torch.tensor([[41, 103, 69]]), torch.tensor([[62, 62, 57]]), torch.tensor([[61, 62, 57]])], #None
                     'scribbles': None,#[torch.tensor([[63,62,29], [64,62,29],[65,62,29]]), torch.tensor([[73,62,57], [74,62,57],[75,62,57]])], 
                     #This second scribble is a fugazi but intended just for sanity checking the mapping.
-                    'bboxes': [torch.Tensor([[56,30,17, 92, 76, 39]]).to(dtype=torch.int64), torch.Tensor([[93,80,30, 105, 100, 51]]).to(dtype=torch.int64)]  #None 
+                    'bboxes': None#[torch.Tensor([[56,30,17, 92, 76, 39]]).to(dtype=torch.int64), torch.Tensor([[93,80,30, 105, 100, 51]]).to(dtype=torch.int64)]  #None 
                     },#This second box is a fugazi but intended just for sanity checking that the multi-box method works. 17-51 should be the real bounds.
                 'interactions_labels': {
-                    'points_labels': None,#[torch.tensor([1])],#[torch.tensor([0]), torch.tensor([1]), torch.tensor([1])], #None,#[torch.tensor([0]), torch.tensor([1])], 
+                    'points_labels': [torch.tensor([1])],#[torch.tensor([0]), torch.tensor([1]), torch.tensor([1])], #None,#[torch.tensor([0]), torch.tensor([1])], 
                     'scribbles_labels':None,#[torch.tensor([1]), torch.tensor([0])],  
-                    'bboxes_labels': [torch.Tensor([1]).to(dtype=torch.int64), torch.Tensor([1]).to(dtype=torch.int64)] #None
+                    'bboxes_labels': None#[torch.Tensor([1]).to(dtype=torch.int64), torch.Tensor([1]).to(dtype=torch.int64)] #None
                     }
                     },
           
