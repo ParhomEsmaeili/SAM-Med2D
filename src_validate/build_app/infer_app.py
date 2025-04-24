@@ -216,6 +216,11 @@ class InferApp:
 
         ########################################################################## 
 
+        #Some assumptions we make are listed below when they have an actionable behaviour. Some however, are not: E.g., one assumption we make is that while we will
+        #enforce that the bbox will remain static post initialisation of a slice and for which we remove any repeats since it would constitute the generation of extra
+        #instances, we do not do this for the points/scribbles. There may be instances where a user is with insistence trying to repeatedly click on the same point!
+
+
         #Initialising any remaining variables required for performing inference.
 
         self.autoseg_infer = True #This is a variable for storing the action taken in the instance where there is no prompting information provided in a slice.
