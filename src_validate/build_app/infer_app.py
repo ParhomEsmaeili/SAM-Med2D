@@ -1365,7 +1365,7 @@ if __name__ == '__main__':
    
     infer_app = InferApp(
         {'dataset_name':'BraTS2021',
-        'dataset_modality':'MRI'}, torch.device('cuda'))
+        'dataset_modality':'MRI'}, torch.device('cuda', index=0))
 
     infer_app.app_configs()
 
