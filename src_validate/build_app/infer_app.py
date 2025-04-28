@@ -425,7 +425,7 @@ class InferApp:
                     # p_dict[0]['bboxes'] = bbox_list
                     # p_dict[1]['bboxes_labels'] = bbox_lb_list
                     # assert p_dict[0]['bboxes'] != [] and p_dict[1]['bboxes_labels'] != []
-                    raise Exception('Was presented with bboxes delineating background only, SAM-Med2D cannot handle this formulation of prompts.')
+                    raise Exception('Was presented with bboxes delineating background, SAM-Med2D cannot handle this formulation of prompts.')
             #Determine the prompt type from the input prompt dictionaries: Not sure if intersection is optimal for catching exceptions here.
             provided_ptypes = list(set([k for k,v in p_dict[0].items() if v is not None]) & set([k[:-7] for k,v in p_dict[1].items() if v is not None]))
             
@@ -1435,12 +1435,12 @@ if __name__ == '__main__':
                     'points': [torch.tensor([[62,62,39]])],#[torch.tensor([[41, 103, 69]]), torch.tensor([[62, 62, 57]]), torch.tensor([[61, 62, 57]])], #None
                     'scribbles': None,#[torch.tensor([[63,62,29], [64,62,29],[65,62,29]]), torch.tensor([[73,62,57], [74,62,57],[75,62,57]])], 
                     #This second scribble is a fugazi but intended just for sanity checking the mapping.
-                    'bboxes': None#[torch.Tensor([[56,30,17, 92, 76, 39]]).to(dtype=torch.int64), torch.Tensor([[93,80,30, 105, 100, 51]]).to(dtype=torch.int64)]  #None 
+                    'bboxes': [torch.Tensor([[56,30,17, 92, 76, 39]]).to(dtype=torch.int64), torch.Tensor([[93,80,30, 105, 100, 51]]).to(dtype=torch.int64)]  #None 
                     },#This second box is a fugazi but intended just for sanity checking that the multi-box method works. 17-51 should be the real bounds.
                 'interactions_labels': {
                     'points_labels': [torch.tensor([1])],#[torch.tensor([0]), torch.tensor([1]), torch.tensor([1])], #None,#[torch.tensor([0]), torch.tensor([1])], 
                     'scribbles_labels':None,#[torch.tensor([1]), torch.tensor([0])],  
-                    'bboxes_labels': None#[torch.Tensor([1]).to(dtype=torch.int64), torch.Tensor([1]).to(dtype=torch.int64)] #None
+                    'bboxes_labels': [torch.Tensor([0]).to(dtype=torch.int64), torch.Tensor([1]).to(dtype=torch.int64)] #None
                     }
                     },
           
