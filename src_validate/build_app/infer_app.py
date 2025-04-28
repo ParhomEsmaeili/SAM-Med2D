@@ -411,21 +411,20 @@ class InferApp:
             
             if p_dict[0]['bboxes'] is not None and p_dict[1]['bboxes_labels'] is not None:
                 #We will flag any background bboxes here. SAM-MED2D cannot handle these (nor does it have any meaning in the context within which they use this.)
-                if not any([i == 1 for i in p_dict[1]['bboxes_labels']]): 
-                    p_dict[0]['bboxes'] = None
-                    p_dict[1]['bboxes_labels'] = None 
-                else:
-                    #There is a background bboxes, SAMMed2D doesn't understand what this means and could break the system.
-                    # bbox_list = []
-                    # bbox_lb_list = []
-                    # for i,j in zip(p_dict[0]['bboxes'], p_dict[1]['bboxes_labels']):
-                    #     if j == 1:
-                    #         bbox_list += [i] 
-                    #         bbox_lb_list += [j] 
-                    # p_dict[0]['bboxes'] = bbox_list
-                    # p_dict[1]['bboxes_labels'] = bbox_lb_list
-                    # assert p_dict[0]['bboxes'] != [] and p_dict[1]['bboxes_labels'] != []
+                if not all([i == 1 for i in p_dict[1]['bboxes_labels']]): 
                     raise Exception('Was presented with bboxes delineating background, SAM-Med2D cannot handle this formulation of prompts.')
+                # else:
+                #     #There is a background bboxes, SAMMed2D doesn't understand what this means and could break the system.
+                #     # bbox_list = []
+                #     # bbox_lb_list = []
+                #     # for i,j in zip(p_dict[0]['bboxes'], p_dict[1]['bboxes_labels']):
+                #     #     if j == 1:
+                #     #         bbox_list += [i] 
+                #     #         bbox_lb_list += [j] 
+                #     # p_dict[0]['bboxes'] = bbox_list
+                #     # p_dict[1]['bboxes_labels'] = bbox_lb_list
+                #     # assert p_dict[0]['bboxes'] != [] and p_dict[1]['bboxes_labels'] != []
+                #     pass
             #Determine the prompt type from the input prompt dictionaries: Not sure if intersection is optimal for catching exceptions here.
             provided_ptypes = list(set([k for k,v in p_dict[0].items() if v is not None]) & set([k[:-7] for k,v in p_dict[1].items() if v is not None]))
             
