@@ -1439,7 +1439,7 @@ if __name__ == '__main__':
                 'interactions_labels': {
                     'points_labels': [torch.tensor([1])],#[torch.tensor([0]), torch.tensor([1]), torch.tensor([1])], #None,#[torch.tensor([0]), torch.tensor([1])], 
                     'scribbles_labels':None,#[torch.tensor([1]), torch.tensor([0])],  
-                    'bboxes_labels': [torch.Tensor([0]).to(dtype=torch.int64), torch.Tensor([1]).to(dtype=torch.int64)] #None
+                    'bboxes_labels': [torch.Tensor([1]).to(dtype=torch.int64), torch.Tensor([1]).to(dtype=torch.int64)] #None
                     }
                     },
           
