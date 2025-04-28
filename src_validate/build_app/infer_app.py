@@ -256,6 +256,18 @@ class InferApp:
             self.model.pixel_std.squeeze().cpu().numpy(),
         )
 
+        self.app_params.update({
+            'autoseg_infer':self.autoseg_infer,
+            'static_bbox':self.static_bbox,
+            'split_forward_mask':self.split_forward_mask,
+            'multi_ambig_mask_default':self.multimask_output,
+            'permitted_prompts':self.permitted_prompts,
+            'pixel_normalisations':{
+                'mean':self.pixel_mean,
+                'std': self.pixel_std
+            }
+        })
+        
     def app_configs(self):
         #STRONGLY Recommended: A method which returns any configuration specific information for printing to the logfile. Expects a dictionary format.
         return self.app_params 
