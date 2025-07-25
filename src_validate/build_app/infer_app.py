@@ -10,7 +10,7 @@ import cv2
 from argparse import Namespace
 import nibabel as nib
 # from loguru import logger
-
+import gc 
 import sys
 import os 
 sys.path.append(os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
@@ -174,8 +174,10 @@ class InferApp:
  
     def __init__(self, dataset_info, infer_device):
         
-        self.sanity_check = True
-        self.sanity_slice_check = 39
+        self.sanity_check = False #True #False #True
+        self.sanity_slice_check = 510#522 #3 #39
+        self.cpu_gpu_burden_ratio = 1 #1 = put everything on GPU with the modulo operation! 1 is a prime factor of every natural number.
+        
         #Some hardcoded params only for performing a sanity check on mapping the input image domain to the domain expected by the model.
 
         ############ Initialising the inference application #####################
@@ -225,7 +227,7 @@ class InferApp:
 
         #Initialising any remaining variables required for performing inference.
 
-        self.autoseg_infer = True #This is a variable for storing the action taken in the instance where there is no prompting information provided in a slice.
+        self.autoseg_infer = False #This is a variable for storing the action taken in the instance where there is no prompting information provided in a slice.
         #In the case where it is True, a prediction will be made, and the stored pred and output pred will be the same.
         #In the case where it is False, a prediction will not be made, the stored pred will be None, and the output pred will be zeroes.
         
@@ -259,9 +261,19 @@ class InferApp:
         #Some preprocessing, post processing params.
         self.clip_lower_bound = 0.5
         self.clip_upper_bound = 99.5
+
+        #some default ct clamp values..:
+        # window_width = 400
+        # window_level = 40 
+        # lower_bound = window_level - window_width / 2
+        # upper_bound = window_level + window_width / 2
+        # self.default_ct_clamp = (lower_bound, upper_bound)
         
         # self.image_embeddings_dict = {}
         self.permitted_prompts = ('points', 'bboxes', 'scribbles')
+        self.glob_norm_bool = True
+        self.slice_norm_method = None 
+
         self.pixel_mean, self.pixel_std = (
             self.model.pixel_mean.squeeze().cpu().numpy(),
             self.model.pixel_std.squeeze().cpu().numpy(),
@@ -282,6 +294,9 @@ class InferApp:
                 'mean':self.pixel_mean,
                 'std': self.pixel_std
             },
+            # 'ct_default_clamp': self.default_ct_clamp,
+            'glob_norm_bool': self.glob_norm_bool,
+            'slice_norm_method': self.slice_norm_method,
             'prob_thresh': self.mask_threshold_sigmoid, 
             'sanity_check_slice': self.sanity_slice_check
         })
@@ -361,6 +376,18 @@ class InferApp:
             if all([i is None for i in is_state['interaction_torch_format']['interactions'].values()]) or all([i is None for i in is_state['interaction_torch_format']['interactions_labels'].values()]):
                 raise Exception('Cannot be an interactive request without interactive inputs.')
             init = True 
+            
+            try:
+                del self.image_embeddings_dict
+                del self.internal_lowres_mask_storage
+                del self.internal_discrete_output_mask_storage
+                del self.internal_prob_output_mask_storage
+                del self.orig_prompts_storage_dict
+                del self.model_prompts_storage_dict
+                
+                torch.cuda.empty_cache() #We clear cache for each new case because image sizes can have variance! 
+            except:
+                pass #HACK: Not a good solution but want to clear the cached memory while keeping the script "online".
 
             self.image_embeddings_dict = dict()
             self.internal_lowres_mask_storage = dict() #This is in the model domain!
@@ -374,12 +401,27 @@ class InferApp:
             self.orig_prompts_storage_dict = dict()
             self.model_prompts_storage_dict = dict()
 
+            torch.cuda.empty_cache()
+
         elif request['model'] == 'IS_autoseg':
             key = 'Automatic Init'
             is_state = request['im'][key]
             if is_state is not None:
-                raise Exception('Autoseg should not have any interaction info.')
+                raise Exception('Autoseg should not have any interaction info.') 
+            
+            #actually just raise an exception, it can't handle autoseg.
+            raise Exception('True Autoseg (not the S.A.T) is too OOD for this algorithm')
             init = True 
+
+            del self.image_embeddings_dict
+            del self.internal_lowres_mask_storage
+            del self.internal_discrete_output_mask_storage
+            del self.internal_prob_output_mask_storage
+            del self.orig_prompts_storage_dict
+            del self.model_prompts_storage_dict
+            
+            torch.cuda.empty_cache() #We clear cache for each new case because image sizes can have variance! 
+
 
             self.image_embeddings_dict = dict()
             self.internal_lowres_mask_storage = dict() #This is in the model domain!
@@ -406,10 +448,10 @@ class InferApp:
     
     def binary_prop_to_model(self, im_dict: dict, is_state: dict | None, init: bool):
         
-        #Prompts and images are provided in R ->L, A->P, S -> I  (where the image itself was also been correspondingly rotated since array_coords >=0).
+        #Prompts and images are provided in L->R, P->A, S -> I  (where the image itself was also been correspondingly rotated since array_coords >=0).
         # 
         #Visual inspection of the images provided in the demo demonstrate that the positive directions of the axes in the axial slice corresponds to the R -> L, A -> P convention.
-        #but, the ordering of the axes differs. I.e., the y dimension of the image array is the A -> P dimension, while the x dimension is the R -> L dimension.
+        #but, the ordering of the axes differs. I.e., the y dimension of the image array is the A - P dimension, while the x dimension is the R -> L dimension.
 
         #Note that OpenCV convention is -----> x, therefore an array that is M x N represents N in the X direction, and M in the y direction.
                                     #  |
@@ -810,9 +852,30 @@ class InferApp:
                 ax_slices_pre_resizing = {}
             ax_slices_process = {} 
 
-            #This normalisation logic is borrowed from RadioActive, as SAM-Med2D does not provide their own preprocessing scripts aside from what is assumed for 
-            # SAM (we assume this is done externally). The logic is fairly standard, and not specialised for specific datasets, nor is it most careful about ensuring the 
-            # foreground is minimally shifted.
+            if len(self.dataset_info['task_channel']) > 1:
+                raise Exception('Implementation currently is not capable of simultaneous handling of > 1 task channel segmentations.')
+            #Normalisation logic is taken from their paper describing their dataset:
+            if self.glob_norm_bool:
+                #They just min-max norm and round up. lets add a clipping to prevent outliers from ruining it too.
+
+                #If it is not CT (i.e. values won't be negative), then we can use the positive voxels to calculate intensity
+                #statistics.
+                if self.dataset_info['task_channel'][0] == 'CT':
+                    lower_bound, upper_bound = np.percentile(input_dom_im_backend, self.clip_lower_bound), np.percentile(input_dom_im_backend, self.clip_upper_bound)
+                else:
+                    #Else, will use the positive voxels.
+                    try:
+                        lower_bound, upper_bound = np.percentile(input_dom_im_backend[input_dom_im_backend > 0], self.clip_lower_bound), np.percentile(input_dom_im_backend[input_dom_im_backend > 0], self.clip_upper_bound)
+                    except:
+                        lower_bound, upper_bound = 0, 0 #the case where there are no positive voxels, we just set the bounds to be 0,0.
+                #Then we do as they do, we min-max on a global scale.
+                input_dom_im_backend = np.clip(input_dom_im_backend, lower_bound, upper_bound)
+                input_dom_im_backend = np.ceil((input_dom_im_backend - lower_bound) / (upper_bound - lower_bound + 1e-6) * 255).astype(np.uint8)
+            # try:
+            #     lower_bound, upper_bound = np.percentile(input_dom_im_backend[input_dom_im_backend > 0], self.clip_lower_bound), np.percentile(slice[slice > 0], self.clip_upper_bound) 
+            # except:
+            #     lower_bound, upper_bound = 0, 0
+            
             for slice_idx in range(input_dom_im_backend.shape[ax]):
                 if ax == 0:
                     slice = input_dom_im_backend[slice_idx, :, :]
@@ -822,10 +885,21 @@ class InferApp:
                     slice = input_dom_im_backend[:, :, slice_idx]
                 else:
                     raise Exception('Cannot have more than three spatial dimensions for indexing the slices, we only permit 3D volumes at most!')
-                try:
-                    lower_bound, upper_bound = np.percentile(slice[slice > 0], self.clip_lower_bound), np.percentile(slice[slice > 0], self.clip_upper_bound) 
-                except:
-                    lower_bound, upper_bound = 0, 0
+                
+                if not self.glob_norm_bool: #In this case we just try and do something very basic on a slice level..
+                    #this is almost certainly not what one would consider "optimal" in the vast majority of cases.
+                    if self.slice_norm_method == 'basic':
+                        try:
+                            lower_bound, upper_bound = np.percentile(slice[slice > 0], self.clip_lower_bound), np.percentile(slice[slice > 0], self.clip_upper_bound) 
+                        except:
+                            lower_bound, upper_bound = 0, 0
+                            #In case that there was no foreground we just set the bounds to be 0,0.
+
+                        #Clamping the voxel intensities.
+                        slice = np.clip(slice, lower_bound, upper_bound) 
+                        slice = np.round((slice - slice.min()) / (slice.max() - slice.min() + 1e-6) * 255).astype(
+                            np.uint8
+                        )  # Mapping to [0,255] rgb scale
 
                 #We transpose the slice spatially, since RAS orientation does not align with the image array orientation of the demo, we assume self-consistency, this assumption may
                 #not be valid but it is our only presumption given the provided information.
@@ -834,11 +908,7 @@ class InferApp:
                 if self.sanity_check:
                     ax_slices_pre_resizing[slice_idx] = slice #We save this to help with our sanity checks.
 
-                #Clamping the voxel intensities.
-                slice = np.clip(slice, lower_bound, upper_bound)
-                slice = np.round((slice - slice.min()) / (slice.max() - slice.min() + 1e-6) * 255).astype(
-                    np.uint8
-                )  # Mapping to [0,255] rgb scale
+                
                 slice = np.repeat(slice[..., None], repeats=3, axis=-1) #RGB
                 slice = (slice - self.pixel_mean) / self.pixel_std  # per-channel pixel normalisation according to the sam parameters.
 
@@ -869,7 +939,12 @@ class InferApp:
             for slice_idx, img_slice in im_slices_model_dom[ax].items():
             # with torch.no_grad():
                 image_embedding = self.model.image_encoder(img_slice.to(self.infer_device))
-                axis_embeddings[slice_idx] = image_embedding.cpu()
+                if slice_idx % self.cpu_gpu_burden_ratio:
+                    axis_embeddings[slice_idx] = image_embedding.cpu().to(torch.float32)
+                    #If not divisible by the burden ratio, we store on cpu. This will intrinsically favour the CPU so
+                    #will require a hotfix later on to resolve this. 
+                else:
+                    axis_embeddings[slice_idx] = image_embedding.to(device=self.infer_device, dtype=torch.float32)
             self.image_embeddings_dict[ax] = axis_embeddings 
 
 ####################################################################################
@@ -911,10 +986,10 @@ class InferApp:
                         #combining all the slices together.
 
                         #Storing the lowres mask in memory. We follow the demo and convert this to a probabilistic map using sigmoid function.
-                        self.internal_lowres_mask_storage[ax][slice_idx] = torch.sigmoid(lowres_masks) 
+                        self.internal_lowres_mask_storage[ax][slice_idx] = torch.sigmoid(lowres_masks).to(torch.float32)
                         #We keep these two separate by following the convention in the demo to use the lowres map for forward propagation.
-                        prob_outputs = torch.sigmoid(logits_outputs)
-                        discrete_outputs = (prob_outputs > self.mask_threshold_sigmoid).long()
+                        prob_outputs = torch.sigmoid(logits_outputs).to(torch.float32)
+                        discrete_outputs = (prob_outputs > self.mask_threshold_sigmoid).to(torch.uint8)
                     else:
                         #In the case where we do not actually perform autoseg inference, but just "skip over" and also pass a NoneType for future iterations such that
                         #the inference is not conditioned on a potentially sparse mask, but rather as though it is starting fresh.
@@ -926,8 +1001,8 @@ class InferApp:
                             raise Exception('Error with the strategy for generating p = 0 maps.')
                         self.internal_lowres_mask_storage[ax][slice_idx] = lowres_masks  
                         #We keep these two separate by following the convention in the demo to use the lowres map for forward propagation.
-                        prob_outputs = torch.sigmoid(logits_outputs).to(device=self.infer_device)
-                        discrete_outputs = (prob_outputs > self.mask_threshold_sigmoid).long()
+                        prob_outputs = torch.sigmoid(logits_outputs).to(torch.float32) #.to(device=self.infer_device)
+                        discrete_outputs = (prob_outputs > self.mask_threshold_sigmoid).to(torch.uint8)
                 else:
                     #In this case we have prompts, we split our next operations between points & scribbles, and bboxes (as we treat scribbles as sets of points)
                     
@@ -984,21 +1059,21 @@ class InferApp:
                     #any deviation from the quantity of bbox at the "initialisation of the slice" will break as it requires an individualchannel 
                     # for each bbox. But this is consistent with the functionality provided.
 
-                    self.internal_lowres_mask_storage[ax][slice_idx] = torch.sigmoid(lowres_masks)
-                    
+                    self.internal_lowres_mask_storage[ax][slice_idx] = torch.sigmoid(lowres_masks).to(torch.float32) 
+
                     if multi_box_bool is not None and not multi_box_bool:
                         #Single box, pretty straight forward to evaluate this.
-                        prob_outputs = torch.sigmoid(logits_outputs)
-                        discrete_outputs = (prob_outputs > self.mask_threshold_sigmoid).long()
+                        prob_outputs = torch.sigmoid(logits_outputs).to(torch.float32) #.to(device=self.infer_device)
+                        discrete_outputs = (prob_outputs > self.mask_threshold_sigmoid).to(torch.uint8)
                     elif multi_box_bool is not None and multi_box_bool:
                         mask_dim = 0
                         if not logits_outputs.shape[mask_dim] > 1:
                             raise Exception(f'We implemented this wrong, the mask dimension from output indicates that 1 or fewer bboxes were used but we are in the handling for multiple bboxes')
                         #Multiple box, we take a naive approach for handling the probabilistic map output, we take max over all channels as it is a single foreground!
-                        box_sep_prob_outputs = torch.sigmoid(logits_outputs)
-                        discrete_outputs = (box_sep_prob_outputs > self.mask_threshold_sigmoid).long()
+                        box_sep_prob_outputs = torch.sigmoid(logits_outputs).to(torch.float32)
+                        discrete_outputs = (box_sep_prob_outputs > self.mask_threshold_sigmoid).to(torch.uint8)
                         #We reduce over the 0th dimension corresponding to the quantity of prompts which are treated as distinct object instances (i.e. for each bbox).
-                        discrete_outputs = (discrete_outputs.sum(dim=mask_dim, keepdim=True) > 0).long() #We sum over the mask dim, then binarise as we assume each instance is
+                        discrete_outputs = (discrete_outputs.sum(dim=mask_dim, keepdim=True) > 0).to(torch.uint8) #We sum over the mask dim, then binarise as we assume each instance is
                         #an instance of the given foreground class (and we are performing semantic segmentation)
                         
                         #Now we aggregate the probability map we want to output.
@@ -1008,8 +1083,8 @@ class InferApp:
                         if slice_ps['bboxes'] != [] or slice_ps['bboxes_labels'] != []:
                             raise Exception('Should not have flagged box as being NoneType if there were boxes.')
                         #For non-box prompt types, we have little to worry about, it doesn't treat each prompt as a separate instance..
-                        prob_outputs = torch.sigmoid(logits_outputs)
-                        discrete_outputs = (prob_outputs > self.mask_threshold_sigmoid).long()
+                        prob_outputs = torch.sigmoid(logits_outputs).to(torch.float32)
+                        discrete_outputs = (prob_outputs > self.mask_threshold_sigmoid).to(torch.uint8)
             
                 #Storing the output maps, first we check that the shapes are consistent with what is required, ESPECIALLY for the channel dimensions:
                 #we reverse the list because the input dom shapes are extracted prior to the transposition required for mapping from RAS to y,x cv2 coordinates.
@@ -1048,6 +1123,11 @@ class InferApp:
         else:
             points = None
 
+        if mask is None:
+            pass
+        else:
+            mask = mask.to(device=self.infer_device) 
+            
         if bboxes[0] is not None and bboxes[0].shape[0] > 1:
             mask_list = [] #SAM Med2D treats each bbox as a separate entity entirely.
             # Embed prompts
@@ -1081,10 +1161,14 @@ class InferApp:
                     low_res_masks = low_res_masks[:, max_indexs]
 
                 # Upscale the masks to the original image resolution
-                processed_masks = self.postprocess_masks(low_res_masks, self.model.image_encoder.img_size, original_size)
+                masks = self.postprocess_masks(low_res_masks, self.model.image_encoder.img_size, original_size)
         
-                mask_list.append(processed_masks)
+                mask_list.append(masks)
+
             masks = torch.cat(mask_list, dim=0)
+            
+            del mask_list 
+
         else: #In the case where we either don't have a bbox, or we only have one the post processing is the same, so we group them together.
             # Embed prompts
             if bboxes[0] is not None and bboxes[0].shape[0] == 1:
@@ -1117,7 +1201,7 @@ class InferApp:
 
             # Upscale the masks to the original image resolution
             masks = self.postprocess_masks(low_res_masks, self.model.image_encoder.img_size, original_size)
-        
+
         if not return_logits:
             sigmoid_output = torch.sigmoid(masks)
             masks = (sigmoid_output > self.mask_threshold_sigmoid).float()
@@ -1128,6 +1212,15 @@ class InferApp:
         else:
             assert masks.shape[0] == 1 
             assert low_res_masks.shape[0] == 1
+        
+        #HACK: to help prevent segfaulting of the GPU VRAM.
+        mask = mask.to(device='cpu')
+        low_res_masks = low_res_masks.to(device='cpu')
+        masks = masks.to(device='cpu')
+        sparse_embeddings = sparse_embeddings.to(device='cpu')
+        dense_embeddings = dense_embeddings.to(device='cpu')
+        gc.collect()
+        torch.cuda.empty_cache() 
 
         return masks, iou_predictions, low_res_masks
     
@@ -1156,6 +1249,11 @@ class InferApp:
         else:
             points = None
 
+        if mask is None:
+            pass
+        else:
+            mask = mask.to(device=self.infer_device) 
+
         if bboxes[0] is not None and bboxes[0].shape[0] > 1:
             mask_list = [] #SAM Med2D treats each bbox as a separate entity entirely.
             #We add a way of tracking each of the lowres masks for forward propagation:
@@ -1181,7 +1279,7 @@ class InferApp:
                         sparse_embeddings, dense_embeddings = self.model.prompt_encoder(
                             points=points,
                             boxes=pre_boxes,
-                            masks=mask,
+                            masks=mask.to(device=self.infer_device),
                         )
                     elif mask.shape[0] == bboxes[0].shape[0]:
                         #In the case where we have multiple masks and so need to select the appropriate one.
@@ -1220,6 +1318,9 @@ class InferApp:
             masks = torch.cat(mask_list, dim=0)
             low_res_masks = torch.cat(lowres_masks_list, dim=0) #We add this for forward propagation of the entire set of the low res masks.
             assert masks.shape[0] == low_res_masks.shape[0] == bboxes[0].shape[0]
+            del mask_list 
+            del lowres_masks_list
+
         else:
             #In any case where bboxes are not provided or we only have one bbox, we only have a singular set of output masks, can take the standard approach.
             # Embed prompts
@@ -1269,6 +1370,18 @@ class InferApp:
         else:
             assert masks.shape[0] == 1 
             assert low_res_masks.shape[0] == 1
+
+        #HACK: to help prevent segfaulting of the GPU VRAM.
+        if mask is None:
+            pass 
+        else:
+            mask = mask.to(device='cpu')
+        low_res_masks = low_res_masks.to(device='cpu')
+        masks = masks.to(device='cpu')
+        sparse_embeddings = sparse_embeddings.to(device='cpu')
+        dense_embeddings = dense_embeddings.to(device='cpu')
+        gc.collect()
+        torch.cuda.empty_cache() 
 
         return masks, iou_predictions, low_res_masks
     
@@ -1366,10 +1479,12 @@ class InferApp:
         #Setting the configs label dictionary for this inference request.
         self.configs_labels_dict = modif_request['config_labels_dict']
 
-
         pred, probs_tensor, affine = app(request=modif_request)
 
-
+        pred = pred.to(device='cpu')
+        probs_tensor = probs_tensor.to(device='cpu')
+        affine = affine.to(device='cpu')
+        torch.cuda.empty_cache()
 
 
         assert probs_tensor.shape[1:] == request['image']['metatensor'].shape[1:]
@@ -1381,14 +1496,21 @@ class InferApp:
 
         output = {
             'probs':{
-                'metatensor':probs_tensor.to(device='cpu'),
-                'meta_dict':{'affine': affine.to(device='cpu')}
+                'metatensor':probs_tensor,
+                'meta_dict':{'affine': affine}
             },
             'pred':{
-                'metatensor':pred.to(device='cpu'),
-                'meta_dict':{'affine': affine.to(device='cpu')}
+                'metatensor':pred,
+                'meta_dict':{'affine': affine}
             },
         }
+        #Functionally probably wont do anything but putting it here as a placebo. Won't make a diff because there are references
+        #to these variables throughout.
+        del pred 
+        del probs_tensor
+        del affine
+        del modif_request
+        gc.collect() 
         return output 
     
 if __name__ == '__main__':
