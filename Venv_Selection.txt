@@ -1,1 +1,0 @@
-Virtual environment required is that of the segvol virtualenv we created.
