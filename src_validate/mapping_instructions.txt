@@ -4,7 +4,7 @@ We can observe that when we extract a 3D image initially, orthogonal rotation ne
 is indexed in the same order. However, the demo provides axial slices as it is 2D. If we take a 2D slice, i.e. planes that are parallel to the R-A plane, then this
 us the corresponding slices.
 
-We also notice that the positive directions in each corresponding axis is still consistent (i.e. R->L, A->P) 
+We also notice that the positive directions in each corresponding axis is still consistent (i.e. L->R, P->A) 
 
 Now, in our image array, the axes corresponding to (x,y,z) in a 3D array would be RAS. However, the demo also provides a coordinate convention according to cv2, 
 which indicates that the coordinate axes of the 2D slice we have taken is mirrored. 
